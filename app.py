@@ -1,9 +1,7 @@
-
 import math
 import time
 from datetime import date, datetime, timedelta
 
-import plotly.graph_objects as go
 import importlib
 
 try:
@@ -100,15 +98,17 @@ st.html(
 
 def save_post(content, category, satisfaction, social, intensity):
     posts = st.session_state.setdefault("posts", [])
-    posts.append({
-        "id": len(posts) + 1,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "content": content,
-        "category": category,
-        "satisfaction": satisfaction,
-        "social": social,
-        "intensity": intensity,
-    })
+    posts.append(
+        {
+            "id": len(posts) + 1,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "content": content,
+            "category": category,
+            "satisfaction": satisfaction,
+            "social": social,
+            "intensity": intensity,
+        }
+    )
 
 
 def submit_daily_entries():
@@ -176,7 +176,7 @@ def finish_save_transition():
 
 
 def reset_history():
-    if st.session_state["confirm_reset"]:
+    if st.session_state.get("confirm_reset", False):
         clear_posts()
         st.session_state["confirm_reset"] = False
         st.session_state["reset_history_expander"] = False
@@ -205,9 +205,10 @@ def clear_posts():
 
 
 def average_coordinate_distance(posts):
+    if not posts:
+        return 0.0
     return sum(
-        math.hypot(post["satisfaction"], post["social"])
-        for post in posts
+        math.hypot(post["satisfaction"], post["social"]) for post in posts
     ) / len(posts)
 
 
@@ -216,15 +217,12 @@ def summarize_coordinates(posts, days):
     period_posts = [
         post
         for post in posts
-        if start_date <= datetime.fromisoformat(post["created_at"]).date()
-        <= date.today()
+        if start_date <= datetime.fromisoformat(post["created_at"]).date() <= date.today()
     ]
     if not period_posts:
         return None
 
-    satisfaction = sum(post["satisfaction"] for post in period_posts) / len(
-        period_posts
-    )
+    satisfaction = sum(post["satisfaction"] for post in period_posts) / len(period_posts)
     social = sum(post["social"] for post in period_posts) / len(period_posts)
     mean_coordinate_distance = average_coordinate_distance(period_posts)
     distance_ratio = mean_coordinate_distance / MAX_COORDINATE_DISTANCE
@@ -301,16 +299,12 @@ def summarize_coordinates(posts, days):
 st.session_state.setdefault("posts", [])
 
 st.title("Beyond Earth")
-st.caption(
-    "Personal feelings → Social patterns"
-)
+st.caption("Personal feelings → Social patterns")
 st.info(
     "投稿履歴はこのブラウザーセッション中だけ保持され、終了後は消えます。"
     "個人情報や、他人に知られたくない内容は入力しないでください。"
 )
-st.write(
-    "Create Your Planet"
-)
+st.write("Create Your Planet")
 st.caption("毎日書いて、星を増やしましょう。")
 
 st.session_state.setdefault("active_view", "journal")
@@ -434,6 +428,9 @@ if st.session_state["active_view"] == "journal":
         result_type, count = post_form_result
         if result_type == "warning":
             st.warning("いいことか悪いことを入力してください。")
+        elif result_type == "success":
+            st.success(f"{count}件の記録を保存しました。")
+
     if st.session_state.get("transition_deadline") is not None:
         st.markdown(
             """
@@ -497,7 +494,6 @@ elif st.session_state["active_view"] == "analysis":
         "履歴をリセット",
         expanded=False,
         key="reset_history_expander",
-        on_change="rerun",
     ):
         st.warning("保存した投稿履歴をすべて削除します。この操作は取り消せません。")
         with st.form("reset_history_form"):
@@ -525,10 +521,7 @@ elif st.session_state["active_view"] == "analysis":
         for post in df
         if datetime.fromisoformat(post["created_at"]).date() == date.today()
     ]
-    today_categories = {
-        display_category_name(post["category"])
-        for post in today_posts
-    }
+    today_categories = {display_category_name(post["category"]) for post in today_posts}
     if {OASIS_PLANET, GHOST_PLANET}.issubset(today_categories):
         kind_message = (
             "今日も一日お疲れ様でした。今が何時であれ、"
@@ -575,110 +568,117 @@ elif st.session_state["active_view"] == "analysis":
             )
         else:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=[
-                    coordinate
-                    for post in df
-                    for coordinate in (0, post["satisfaction"], None)
-                ],
-                y=[
-                    coordinate
-                    for post in df
-                    for coordinate in (0, post["social"], None)
-                ],
-                mode="lines",
-                line={"color": "rgba(190, 210, 255, 0.24)", "width": 1},
-                hoverinfo="skip",
-                showlegend=False,
-                name="地球からの距離",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=[
+                        coordinate
+                        for post in df
+                        for coordinate in (0, post["satisfaction"], None)
+                    ],
+                    y=[
+                        coordinate
+                        for post in df
+                        for coordinate in (0, post["social"], None)
+                    ],
+                    mode="lines",
+                    line={"color": "rgba(190, 210, 255, 0.24)", "width": 1},
+                    hoverinfo="skip",
+                    showlegend=False,
+                    name="地球からの距離",
+                )
+            )
             for category_name in dict.fromkeys(
-                display_category_name(post["category"])
-                for post in df
+                display_category_name(post["category"]) for post in df
             ):
                 category_posts = [
                     post
                     for post in df
                     if display_category_name(post["category"]) == category_name
                 ]
-                star_color = (
-                    "#b8ff88" if category_name == OASIS_PLANET else "#b8a5ff"
+                star_color = "#b8ff88" if category_name == OASIS_PLANET else "#b8a5ff"
+                fig.add_trace(
+                    go.Scatter(
+                        x=[post["satisfaction"] for post in category_posts],
+                        y=[post["social"] for post in category_posts],
+                        mode="markers",
+                        marker={
+                            "symbol": "diamond",
+                            "size": [
+                                30 + (max(-1, min(1, post["satisfaction"])) + 1) * 8
+                                for post in category_posts
+                            ],
+                            "color": star_color,
+                            "opacity": 0.2,
+                            "line": {"width": 0},
+                        },
+                        hoverinfo="skip",
+                        showlegend=False,
+                        name=f"{category_name}の光",
+                    )
                 )
-                fig.add_trace(go.Scatter(
-                    x=[post["satisfaction"] for post in category_posts],
-                    y=[post["social"] for post in category_posts],
-                    mode="markers",
-                    marker={
-                        "symbol": "diamond",
-                        "size": [
-                            30 + (max(-1, min(1, post["satisfaction"])) + 1) * 8
+                fig.add_trace(
+                    go.Scatter(
+                        x=[post["satisfaction"] for post in category_posts],
+                        y=[post["social"] for post in category_posts],
+                        mode="markers",
+                        name=category_name,
+                        marker={
+                            "symbol": "diamond",
+                            "size": [
+                                8 + (max(-1, min(1, post["satisfaction"])) + 1) * 11
+                                for post in category_posts
+                            ],
+                            "color": star_color,
+                            "line": {"color": "#ffffff", "width": 1.2},
+                            "sizemode": "diameter",
+                        },
+                        text=[
+                            f"{post['content']}<br>{post['created_at']}<br>"
+                            f"地球（原点）からの距離: "
+                            f"{math.hypot(post['satisfaction'], post['social']):.2f}"
                             for post in category_posts
                         ],
-                        "color": star_color,
-                        "opacity": 0.2,
+                        hovertemplate=(
+                            "満足度: %{x:.2f}<br>"
+                            "個人 ← → 社会の影響: %{y:.2f}<br>"
+                            "%{text}<extra>%{fullData.name}</extra>"
+                        ),
+                    )
+                )
+            fig.add_trace(
+                go.Scatter(
+                    x=[0],
+                    y=[0],
+                    mode="markers",
+                    marker={
+                        "symbol": "circle",
+                        "size": 42,
+                        "color": "rgba(74, 222, 128, 0.22)",
                         "line": {"width": 0},
                     },
                     hoverinfo="skip",
                     showlegend=False,
-                    name=f"{category_name}の光",
-                ))
-                fig.add_trace(go.Scatter(
-                    x=[post["satisfaction"] for post in category_posts],
-                    y=[post["social"] for post in category_posts],
-                    mode="markers",
-                    name=category_name,
+                    name="地球の光",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[0],
+                    y=[0],
+                    mode="markers+text",
+                    name="地球（原点）",
                     marker={
-                        "symbol": "diamond",
-                        "size": [
-                            8 + (max(-1, min(1, post["satisfaction"])) + 1) * 11
-                            for post in category_posts
-                        ],
-                        "color": star_color,
-                        "line": {"color": "#ffffff", "width": 1.2},
-                        "sizemode": "diameter",
+                        "symbol": "circle",
+                        "size": 28,
+                        "color": "#39a96b",
+                        "line": {"color": "#b8ffd2", "width": 2},
                     },
-                    text=[
-                        f"{post['content']}<br>{post['created_at']}<br>"
-                        f"地球（原点）からの距離: "
-                        f"{math.hypot(post['satisfaction'], post['social']):.2f}"
-                        for post in category_posts
-                    ],
-                    hovertemplate=(
-                        "満足度: %{x:.2f}<br>"
-                        "個人 ← → 社会の影響: %{y:.2f}<br>"
-                        "%{text}<extra>%{fullData.name}</extra>"
-                    ),
-                ))
-            fig.add_trace(go.Scatter(
-                x=[0],
-                y=[0],
-                mode="markers",
-                marker={
-                    "symbol": "circle",
-                    "size": 42,
-                    "color": "rgba(74, 222, 128, 0.22)",
-                    "line": {"width": 0},
-                },
-                hoverinfo="skip",
-                showlegend=False,
-                name="地球の光",
-            ))
-            fig.add_trace(go.Scatter(
-                x=[0],
-                y=[0],
-                mode="markers+text",
-                name="地球（原点）",
-                marker={
-                    "symbol": "circle",
-                    "size": 28,
-                    "color": "#39a96b",
-                    "line": {"color": "#b8ffd2", "width": 2},
-                },
-                text=["地球"],
-                textposition="bottom center",
-                textfont={"color": "#ffffff", "size": 13},
-                hovertemplate="地球（原点）<extra></extra>",
-            ))
+                    text=["地球"],
+                    textposition="bottom center",
+                    textfont={"color": "#ffffff", "size": 13},
+                    hovertemplate="地球（原点）<extra></extra>",
+                )
+            )
 
             fig.update_layout(
                 title="地球から広がる記録",
